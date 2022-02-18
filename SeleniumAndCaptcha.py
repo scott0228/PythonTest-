@@ -1,4 +1,8 @@
-# 
+# TESSDATA_PREFIX 
+# mkdir -p ~/tesseract/tessdata
+# cd ~/tesseract/tessdata
+# curl -O https://raw.githubusercontent.com/tesseract-ocr/tessdata/main/eng.traineddata
+# export TESSDATA_PREFIX=~/tesseract/tessdata
 # !pip show selenium pytesseract
 import pytesseract
 import base64
@@ -14,54 +18,35 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException, NoAlertPresentException     
 
-def convert_img(img,threshold): 
-    img = img.convert("L") 
-    im1 = img.filter(ImageFilter.BLUR)
-    im2 = img.filter(ImageFilter.MinFilter(3))
-    im3 = img.filter(ImageFilter.MinFilter)  
-    im1.show()
-    im2.show()
-    im3.show()
-    # 處理灰度 
-    pixels = img.load() 
-    for x in range(img.width):
-        for y in range(img.height): 
-            if pixels[x, y] > threshold: 
-                pixels[x, y] = 255
-            else: 
-                pixels[x, y] = 0 
+def clear_image(image):
+    image = image.convert('RGB')
+    width = image.size[0]
+    height = image.size[1]
+    noise_color = get_noise_color(image)
+    
+    for x in range(width):
+        for y in  range(height):
+            #清除邊框和干擾色
+            rgb = image.getpixel((x, y))
+            if (x == 0 or y == 0 or x == width - 1 or y == height - 1 
+                or rgb == noise_color or rgb[1]>100):
+                image.putpixel((x, y), (255, 255, 255))
+    return image
 
-    data = img.getdata()
-    w,h = img.size
-    count = 0
-    for x in range(1,h-1):
-        for y in range(1, h - 1):
-            # 找出各个像素方向
-            mid_pixel = data[w * y + x]
-            if mid_pixel == 0:
-                top_pixel = data[w * (y - 1) + x]
-                left_pixel = data[w * y + (x - 1)]
-                down_pixel = data[w * (y + 1) + x]
-                right_pixel = data[w * y + (x + 1)]
-                if top_pixel == 0:
-                    count += 1
-                if left_pixel == 0:
-                    count += 1
-                if down_pixel == 0:
-                    count += 1
-                if right_pixel == 0:
-                    count += 1
-                if count > 4:
-                    img.putpixel((x, y), 0)
-    return img
+def get_noise_color(image):
+    for y in range(1, image.size[1] - 1):
+        # 獲取第2列非白的顏色
+        (r, g, b) = image.getpixel((2, y))
+        if r < 255 and g < 255 and b < 255:
+            return (r, g, b)
 
 # 辨斷 Captcha
 def getCaptcha(elem):
     img_base64 = elem.screenshot_as_base64
     captcha = Image.open(BytesIO(base64.b64decode(img_base64)))
-    image = convert_img(captcha,140)
-    
+    image = clear_image(captcha)
     image.show()
+
     # 存下來方便之後對照
     elem.screenshot('getCaptcha.png')
 
@@ -82,3 +67,4 @@ if __name__ == '__main__':
     driver.find_element(By.XPATH, '//*[@id="login_id"]').send_keys( "scott")
     elem = driver.find_element(By.CSS_SELECTOR, "#captcha_img > img:nth-child(1)")
     driver.find_element(By.XPATH, '//*[@id="captcha"]').send_keys(getCaptcha(elem))
+    driver.close()
